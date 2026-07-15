@@ -32,17 +32,13 @@ jobs:
         run: |
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             sudo dpkg --add-architecture arm64
-            # Add arm64 package sources without modifying existing list files
+            # Force all existing repos to only fetch amd64
+            echo 'APT::Architectures:: "amd64";' | sudo tee /etc/apt/apt.conf.d/99-force-amd64
+            # Add arm64 sources from ports.ubuntu.com
             CODENAME=$(lsb_release -cs)
-            cat <<EOF | sudo tee /etc/apt/sources.list.d/arm64-cross.list
-          deb [arch=arm64] http://ports.ubuntu.com/ ${CODENAME} main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ ${CODENAME}-updates main restricted universe multiverse
-          EOF
-            # Restrict existing Ubuntu sources to amd64 only
-            if [ -f /etc/apt/sources.list ]; then
-              sudo sed -i 's|^deb http://archive.ubuntu.com|deb [arch=amd64] http://archive.ubuntu.com|' /etc/apt/sources.list
-              sudo sed -i 's|^deb http://security.ubuntu.com|deb [arch=amd64] http://security.ubuntu.com|' /etc/apt/sources.list
-            fi
+            printf "deb [arch=arm64] http://ports.ubuntu.com/ %s main restricted universe multiverse\n" \
+              "${CODENAME}" "${CODENAME}-updates" "${CODENAME}-security" \
+              | sudo tee /etc/apt/sources.list.d/arm64-cross.list
           fi
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libseccomp-dev
