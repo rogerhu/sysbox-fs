@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., 0.7.0)"
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout sysbox monorepo
+        uses: actions/checkout@v4
+        with:
+          repository: nestybox/sysbox
+          submodules: recursive
+          path: sysbox
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: sysbox/sysbox-fs/go.sum
+
+      - name: Install cross-compilation toolchain
+        if: matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build sysbox-fs
+        working-directory: sysbox/sysbox-fs
+        env:
+          VERSION: ${{ inputs.version }}
+          EDITION: CE
+        run: |
+          COMMIT=$(git rev-parse HEAD)
+          BUILT_AT=$(date)
+          LDFLAGS="-X 'main.edition=${EDITION}' -X main.version=${VERSION} -X main.commitId=${COMMIT} -X 'main.builtAt=${BUILT_AT}' -X 'main.builtBy=GitHub Actions'"
+
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
+              go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o sysbox-fs-linux-arm64 ./cmd/sysbox-fs
+          else
+            CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+              go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o sysbox-fs-linux-amd64 ./cmd/sysbox-fs
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sysbox-fs-linux-${{ matrix.arch }}
+          path: sysbox/sysbox-fs/sysbox-fs-linux-${{ matrix.arch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          files: |
+            artifacts/sysbox-fs-linux-amd64/sysbox-fs-linux-amd64
+            artifacts/sysbox-fs-linux-arm64/sysbox-fs-linux-arm64
+          generate_release_notes: true
