@@ -32,6 +32,11 @@ jobs:
         run: |
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             sudo dpkg --add-architecture arm64
+            # Add arm64 package sources
+            sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list.d/*.list 2>/dev/null || true
+            sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list 2>/dev/null || true
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ $(lsb_release -cs) main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ $(lsb_release -cs)-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
           fi
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libseccomp-dev
@@ -57,6 +62,7 @@ jobs:
           LDFLAGS="-X 'main.edition=${EDITION}' -X main.version=${VERSION} -X main.commitId=${COMMIT} -X 'main.builtAt=${BUILT_AT}' -X 'main.builtBy=GitHub Actions'"
 
           if [ "${{ matrix.arch }}" = "arm64" ]; then
+            PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
             CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
               go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o sysbox-fs-linux-arm64 ./cmd/sysbox-fs
           else
